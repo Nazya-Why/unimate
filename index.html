@@ -289,6 +289,7 @@ dialog.wide{width:min(960px,calc(100vw - 24px));height:calc(100% - 40px)}
 .skins button{width:26px;height:26px;border-radius:50%;border:2px solid var(--card);box-shadow:0 0 0 1px var(--line);padding:0;background:var(--sw)}
 .skins button[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
 .sync.err{color:var(--red)}
+#qr{background:#fff;padding:12px;border-radius:10px;width:max-content;max-width:100%}#qr svg{display:block;width:240px;height:240px}
 .acct-box{border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px;background:var(--paper)}
 body.locked{overflow:hidden}
 #login{position:fixed;inset:0;z-index:50;background:var(--paper);overflow:auto;padding:env(safe-area-inset-top,0px) 16px env(safe-area-inset-bottom,0px)}
@@ -316,6 +317,7 @@ body.locked{overflow:hidden}
     <li><b>Permissions</b> → <b>Contents</b> → <b>Read and write</b>.</li>
     <li>Натисни <b>Generate token</b>, скопіюй його і встав нижче.</li>
   </ol>
+  <p><b style="color:var(--ink)">Вже увійшов на комп’ютері?</b> Там відкрий Налаштування → «Увійти на іншому пристрої» і відскануй QR-код цим телефоном. Токен створювати не треба.</p>
   <form id="fLogin" autocomplete="off">
     <label>Токен GitHub<input id="lgToken" type="password" placeholder="github_pat_…" autocapitalize="off" spellcheck="false"></label>
     <label>Репозиторій з даними<input id="lgRepo" placeholder="нік/unimate-data (можна не заповнювати)" autocapitalize="off" spellcheck="false"></label>
@@ -437,7 +439,7 @@ body.locked{overflow:hidden}
 <!-- Settings dialog -->
 <dialog id="dlgSet"><form method="dialog" id="fSet">
   <h3>Налаштування</h3>
-  <div class="acct-box"><div id="acct" class="muted"></div><div class="file-btns"><button type="button" class="ghost" id="syncNow">Синхронізувати зараз</button><button type="button" class="ghost" id="logoutBtn">Вийти на цьому пристрої</button></div></div>
+  <div class="acct-box"><div id="acct" class="muted"></div><div class="file-btns"><button type="button" class="ghost" id="syncNow">Синхронізувати зараз</button><button type="button" class="ghost" id="logoutBtn">Вийти на цьому пристрої</button></div><button type="button" class="primary" id="qrBtn">Увійти на іншому пристрої (QR-код)</button><div id="qrBox" hidden><div id="qr"></div><p class="muted" style="margin:8px 0 0;font-size:.85rem">Відскануй камерою телефона, і він увійде сам. Код містить твій ключ доступу, тож не показуй його іншим. <button type="button" class="ghost" id="qrCopy">Копіювати посилання</button></p></div></div>
   <label>Підпис під назвою (спеціальність, університет)<input name="org" placeholder="Кібербезпека, Львівська політехніка"></label>
   <label>Резервна копія (скопіюй і збережи, або встав свою й натисни «Відновити»)<textarea name="backup" rows="4"></textarea></label>
   <div class="dlg-actions">
@@ -1026,7 +1028,29 @@ $('#logoutBtn').addEventListener('click',()=>{
   try{[AUTH_KEY,KEY,META_KEY].forEach(k=>localStorage.removeItem(k))}catch(e){}
   location.reload();
 });
-if(!auth)showLogin(); else {setSync(dirty?'Відправляю зміни…':'Перевіряю оновлення…');sync()}
+function connectLink(){return location.origin+location.pathname+'#connect='+encodeURIComponent(btoa(JSON.stringify({t:auth.token,r:auth.repo,l:auth.login})))}
+function loadQrLib(){return window.qrcode?Promise.resolve():new Promise((ok,no)=>{const sc=document.createElement('script');sc.src='qrcode.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)})}
+$('#qrBtn').addEventListener('click',async()=>{
+  if(!auth)return; const box=$('#qrBox'); box.hidden=!box.hidden; if(box.hidden)return;
+  $('#qr').textContent='Генерую…';
+  try{await loadQrLib();const q=qrcode(0,'L');q.addData(connectLink());q.make();$('#qr').innerHTML=q.createSvgTag({cellSize:4,margin:2,scalable:true})}
+  catch(e){$('#qr').textContent='Не вдалося створити QR. Скористайся кнопкою «Копіювати посилання».'}
+});
+$('#qrCopy').addEventListener('click',()=>{const u=connectLink();(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>{$('#qrCopy').textContent='Скопійовано ✓'},()=>prompt('Скопіюй посилання:',u))});
+$('#dlgSet').addEventListener('close',()=>{$('#qrBox').hidden=true;$('#qr').innerHTML=''});
+async function tryConnectHash(){
+  const m=/[#&]connect=([^&]+)/.exec(location.hash); if(!m)return false;
+  history.replaceState(null,'',location.pathname+location.search);
+  try{
+    const d=JSON.parse(atob(decodeURIComponent(m[1])));
+    $('#lgToken').value=d.t; $('#lgRepo').value=d.r;
+    showLogin('Підключаю цей пристрій…');
+    $('#fLogin').requestSubmit();
+    return true;
+  }catch(e){showLogin('Посилання для входу пошкоджене. Відскануй QR ще раз.');return true}
+}
+if(location.hash.includes('connect=')) tryConnectHash();
+else if(!auth)showLogin(); else {setSync(dirty?'Відправляю зміни…':'Перевіряю оновлення…');sync()}
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 })();
 </script>
